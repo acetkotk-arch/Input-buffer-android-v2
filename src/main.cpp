@@ -51,7 +51,7 @@ class $modify(BufGJBGL, GJBaseGameLayer) {
         return groundMode && p->m_isOnGround;
     }
 
-    void processCommands(float dt) {
+    void processCommands(float dt, bool isHalfTick, bool isLastTick) {
         auto f = m_fields.self();
         f->tick++;
 
@@ -78,7 +78,7 @@ class $modify(BufGJBGL, GJBaseGameLayer) {
                 }
             }
         }
-        GJBaseGameLayer::processCommands(dt);
+        GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
     }
 
     void handleButton(bool down, int button, bool isPlayer1) {
@@ -126,8 +126,8 @@ class $modify(BufPlayLayer, PlayLayer) {
         }
     }
 
-    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+    bool init(GJGameLevel* level, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, dontCreateObjects)) return false;
         auto win = CCDirector::get()->getWinSize();
         auto lbl = CCLabelBMFont::create("", "bigFont.fnt");
         lbl->setScale(0.35f);
