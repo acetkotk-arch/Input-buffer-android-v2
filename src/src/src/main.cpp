@@ -23,7 +23,7 @@ class $modify(BufPlayLayer, PlayLayer) {
             auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(BufPlayLayer::onBufferTap));
             auto menu = CCMenu::create();
             menu->setPosition({0, 0});
-            btn->setPosition({24.f, win.height - 24.f});
+            btn->setPosition({40.f, win.height - 40.f});
             menu->addChild(btn);
             menu->setZOrder(100);
             this->addChild(menu);
@@ -47,16 +47,17 @@ class $modify(BufPlayLayer, PlayLayer) {
 class $modify(BufPauseLayer, PauseLayer) {
     void customSetup() {
         PauseLayer::customSetup();
+        log::info("Safe Input Buffer: adding pause button");
 
         auto win = CCDirector::get()->getWinSize();
-        auto sprite = ButtonSprite::create("Buffer", 60, true, "goldFont.fnt", "GJ_button_04.png", 30.f, 0.6f);
+        auto sprite = ButtonSprite::create("Buffer", 80, true, "goldFont.fnt", "GJ_button_01.png", 35.f, 0.7f);
         auto btn = CCMenuItemSpriteExtra::create(sprite, this, menu_selector(BufPauseLayer::onBufferOpen));
 
         auto menu = CCMenu::create();
         menu->setPosition({0, 0});
-        btn->setPosition({win.width - 60.f, win.height - 30.f});
+        btn->setPosition({100.f, win.height - 45.f});
         menu->addChild(btn);
-        this->addChild(menu);
+        this->addChild(menu, 1000);
     }
 
     void onBufferOpen(CCObject*) {
