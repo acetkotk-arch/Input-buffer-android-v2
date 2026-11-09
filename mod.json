@@ -1,0 +1,47 @@
+{
+	"geode": "5.0.0",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081"
+	},
+	"version": "v2.0.0",
+	"id": "yourname.safe-input-buffer",
+	"name": "Safe Input Buffer",
+	"developer": "yourname",
+	"description": "Open-source input buffer for rings/orbs and wave release, with an in-game toggle button. Practice-only by default.",
+	"settings": {
+		"enabled": {
+			"type": "bool",
+			"name": "Enabled",
+			"default": true
+		},
+		"practice-only": {
+			"type": "bool",
+			"name": "Practice / Testing Only",
+			"description": "Only buffer in Practice Mode or editor playtest, so normal runs and records stay unassisted.",
+			"default": true
+		},
+		"click-ticks": {
+			"type": "int",
+			"name": "Click Buffer (ticks)",
+			"description": "How long an early click on a ring/orb is remembered. 240 ticks = 1 second.",
+			"default": 2,
+			"min": 0,
+			"max": 16,
+			"control": { "slider": true, "input": true }
+		},
+		"wave-ticks": {
+			"type": "int",
+			"name": "Wave Release Buffer (ticks)",
+			"default": 2,
+			"min": 0,
+			"max": 16,
+			"control": { "slider": true, "input": true }
+		},
+		"show-label": {
+			"type": "bool",
+			"name": "Show On-Screen Label",
+			"default": true
+		}
+	}
+}
