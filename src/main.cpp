@@ -11,184 +11,100 @@ static bool cfgPractice()  { return Mod::get()->getSettingValue<bool>("practice-
 static int  cfgClick()     { return (int)Mod::get()->getSettingValue<int64_t>("click-ticks"); }
 static int  cfgWave()      { return (int)Mod::get()->getSettingValue<int64_t>("wave-ticks"); }
 static bool cfgLabel()     { return Mod::get()->getSettingValue<bool>("show-label"); }
+static bool cfgInGameBtn() { return Mod::get()->getSettingValue<bool>("ingame-button"); }
 
-// Presets cycled by the pause-menu button: {click, wave}
-static constexpr int PRESETS[][2] = { {0,0}, {2,2}, {4,4}, {8,8}, {16,8} };
-static constexpr int NUM_PRESETS = 5;
-
-// ---------- core logic ----------
-class $modify(BufGJBGL, GJBaseGameLayer) {
-    struct Fields {
-        int  tick = 0;
-        bool held[2]        = {false, false};
-        int  pressTick[2]   = {-9999, -9999};
-        bool armed[2]       = {false, false};
-        bool releasePending[2]  = {false, false};
-        int  releaseDueTick[2]  = {0, 0};
-        bool assistedThisAttempt = false;
-    };
-
-    bool bufferActive() {
-        if (!cfgEnabled()) return false;
-        if (!cfgPractice()) return true;
-        auto pl = PlayLayer::get();
-        bool practice = pl && pl->m_isPracticeMode;
-        bool editorTest = !pl;
-        return practice || editorTest;
+// ---------- shared helpers ----------
+static void updateLabel() {
+    auto pl = PlayLayer::get();
+    if (!pl) return;
+    auto lbl = typeinfo_cast<CCLabelBMFont*>(pl->getChildByID("buffer-label"_spr));
+    if (!lbl) return;
+    bool show = cfgLabel() && cfgEnabled();
+    lbl->setVisible(show);
+    if (show) {
+        lbl->setString(
+            fmt::format("Buffer {}/{}{}", cfgClick(), cfgWave(),
+                        cfgPractice() ? " (practice)" : "").c_str());
     }
+}
 
-    PlayerObject* playerFor(int idx) {
-        return idx == 0 ? m_player1 : m_player2;
-    }
+// ---------- settings window ----------
+class BufferPopup : public FLAlertLayer {
+public:
+    CCLabelBMFont* m_clickLbl = nullptr;
+    CCLabelBMFont* m_waveLbl = nullptr;
 
-    // True when a click would actually do something right now:
-    // touching a ring/orb, or (for cube/ball/robot/spider) standing on a surface.
-    bool canActNow(PlayerObject* p) {
-        if (!p) return true;
-        bool ringTouch = p->m_touchingRings && p->m_touchingRings->count() > 0;
-        if (ringTouch) return true;
-        bool groundMode = !(p->m_isShip || p->m_isBird || p->m_isDart || p->m_isSwing);
-        return groundMode && p->m_isOnGround;
-    }
-
-    void processCommands(float dt, bool isHalfTick, bool isLastTick) {
-        auto f = m_fields.self();
-        f->tick++;
-
-        if (bufferActive()) {
-            for (int i = 0; i < 2; i++) {
-                auto* p = playerFor(i);
-                if (!p) continue;
-
-                // Early-click buffer for all modes.
-                if (f->held[i] && f->armed[i] &&
-                    f->tick - f->pressTick[i] <= cfgClick() &&
-                    canActNow(p)) {
-                    f->armed[i] = false;
-                    f->assistedThisAttempt = true;
-                    GJBaseGameLayer::handleButton(false, 1, i == 0);
-                    GJBaseGameLayer::handleButton(true, 1, i == 0);
-                }
-
-                // Delayed wave release.
-                if (f->releasePending[i] && f->tick >= f->releaseDueTick[i]) {
-                    f->releasePending[i] = false;
-                    f->assistedThisAttempt = true;
-                    GJBaseGameLayer::handleButton(false, 1, i == 0);
-                }
-            }
+    static BufferPopup* create() {
+        auto ret = new BufferPopup();
+        if (ret && ret->init()) {
+            ret->autorelease();
+            return ret;
         }
-        GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
+        CC_SAFE_DELETE(ret);
+        return nullptr;
     }
 
-    void handleButton(bool down, int button, bool isPlayer1) {
-        if (button != 1 || !bufferActive()) {
-            GJBaseGameLayer::handleButton(down, button, isPlayer1);
-            return;
-        }
-        auto f = m_fields.self();
-        int i = isPlayer1 ? 0 : 1;
-        auto* p = playerFor(i);
+    bool init() {
+        if (!FLAlertLayer::init(150)) return false;
 
-        if (down) {
-            f->held[i] = true;
-            f->pressTick[i] = f->tick;
-            // Only arm the buffer if this click can't act yet.
-            f->armed[i] = (p != nullptr) && !canActNow(p);
-            f->releasePending[i] = false;
-            GJBaseGameLayer::handleButton(true, button, isPlayer1);
-        } else {
-            f->held[i] = false;
-            f->armed[i] = false;
-            if (p && p->m_isDart && cfgWave() > 0) {
-                f->releasePending[i] = true;
-                f->releaseDueTick[i] = f->tick + cfgWave();
-            } else {
-                GJBaseGameLayer::handleButton(false, button, isPlayer1);
-            }
-        }
-    }
-};
+        this->setTouchEnabled(true);
+        this->setKeypadEnabled(true);
 
-// ---------- on-screen label ----------
-class $modify(BufPlayLayer, PlayLayer) {
-    struct Fields { CCLabelBMFont* label = nullptr; };
+        m_mainLayer = CCLayer::create();
+        this->addChild(m_mainLayer);
 
-    void refreshLabel() {
-        auto f = m_fields.self();
-        if (!f->label) return;
-        bool show = cfgLabel() && cfgEnabled();
-        f->label->setVisible(show);
-        if (show) {
-            f->label->setString(
-                fmt::format("Buffer {}/{}{}", cfgClick(), cfgWave(),
-                            cfgPractice() ? " (practice)" : "").c_str());
-        }
-    }
-
-    bool init(GJGameLevel* level, bool dontCreateObjects) {
-        if (!PlayLayer::init(level, dontCreateObjects)) return false;
         auto win = CCDirector::get()->getWinSize();
-        auto lbl = CCLabelBMFont::create("", "bigFont.fnt");
-        lbl->setScale(0.35f);
-        lbl->setOpacity(140);
-        lbl->setPosition({win.width - 8.f, 10.f});
-        lbl->setAnchorPoint({1.f, 0.5f});
-        lbl->setZOrder(100);
-        this->addChild(lbl);
-        m_fields->label = lbl;
-        refreshLabel();
+        float cx = win.width / 2.f;
+        float cy = win.height / 2.f;
+
+        // Panel background
+        auto panel = CCLayerColor::create(ccColor4B{25, 25, 40, 240}, 300.f, 260.f);
+        panel->setPosition({cx - 150.f, cy - 130.f});
+        m_mainLayer->addChild(panel);
+
+        m_buttonMenu = CCMenu::create();
+        m_buttonMenu->setPosition({0.f, 0.f});
+        m_mainLayer->addChild(m_buttonMenu);
+
+        // Title
+        auto title = CCLabelBMFont::create("Input Buffer", "goldFont.fnt");
+        title->setScale(0.8f);
+        title->setPosition({cx, cy + 112.f});
+        m_mainLayer->addChild(title);
+
+        // Toggle rows
+        this->addToggleRow("Enabled",        0, cy + 80.f, cfgEnabled(),   cx);
+        this->addToggleRow("Practice only",  1, cy + 50.f, cfgPractice(),  cx);
+        this->addToggleRow("Show label",     2, cy + 20.f, cfgLabel(),     cx);
+        this->addToggleRow("In-game button", 3, cy - 10.f, cfgInGameBtn(), cx);
+
+        // Stepper rows
+        this->addStepperRow("Click buffer", 0, cy - 40.f, cfgClick(), cx, &m_clickLbl);
+        this->addStepperRow("Wave buffer",  2, cy - 70.f, cfgWave(),  cx, &m_waveLbl);
+
+        // Close button
+        auto okSpr = ButtonSprite::create("OK");
+        auto okBtn = CCMenuItemSpriteExtra::create(okSpr, this, menu_selector(BufferPopup::onClose));
+        okBtn->setPosition({cx, cy - 108.f});
+        m_buttonMenu->addChild(okBtn);
+
         return true;
     }
 
-    void resetLevel() {
-        PlayLayer::resetLevel();
-        refreshLabel();
-    }
-};
+    void addToggleRow(const char* text, int tag, float y, bool value, float cx) {
+        auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
+        lbl->setScale(0.5f);
+        lbl->setAnchorPoint({0.f, 0.5f});
+        lbl->setPosition({cx - 125.f, y});
+        m_mainLayer->addChild(lbl);
 
-// ---------- pause-menu UI ----------
-class $modify(BufPauseLayer, PauseLayer) {
-    void customSetup() {
-        PauseLayer::customSetup();
-
-        auto win = CCDirector::get()->getWinSize();
-        auto sprite = ButtonSprite::create("Buffer", 60, true, "goldFont.fnt", "GJ_button_04.png", 30.f, 0.6f);
-        auto btn = CCMenuItemSpriteExtra::create(sprite, this, menu_selector(BufPauseLayer::onBufferCycle));
-
-        auto settingsSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn02_001.png");
-        settingsSpr->setScale(0.7f);
-        auto settingsBtn = CCMenuItemSpriteExtra::create(settingsSpr, this, menu_selector(BufPauseLayer::onBufferSettings));
-
-        auto menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        btn->setPosition({win.width - 60.f, 30.f});
-        settingsBtn->setPosition({win.width - 115.f, 30.f});
-        menu->addChild(btn);
-        menu->addChild(settingsBtn);
-        this->addChild(menu);
+        auto toggler = CCMenuItemToggler::createWithStandardSprites(
+            this, menu_selector(BufferPopup::onToggle), 0.6f);
+        toggler->setTag(tag);
+        toggler->toggle(value);
+        toggler->setPosition({cx + 105.f, y});
+        m_buttonMenu->addChild(toggler);
     }
 
-    void onBufferCycle(CCObject*) {
-        int cur = 0;
-        for (int i = 0; i < NUM_PRESETS; i++) {
-            if (cfgEnabled() && PRESETS[i][0] == cfgClick() && PRESETS[i][1] == cfgWave()) cur = i + 1;
-        }
-        int next = (cur + 1) % (NUM_PRESETS + 1);
-        if (next == 0) {
-            Mod::get()->setSettingValue<bool>("enabled", false);
-            Notification::create("Input buffer: OFF", NotificationIcon::Info, 1.f)->show();
-        } else {
-            Mod::get()->setSettingValue<bool>("enabled", true);
-            Mod::get()->setSettingValue<int64_t>("click-ticks", PRESETS[next - 1][0]);
-            Mod::get()->setSettingValue<int64_t>("wave-ticks",  PRESETS[next - 1][1]);
-            Notification::create(
-                fmt::format("Input buffer: {} / {} ticks", PRESETS[next - 1][0], PRESETS[next - 1][1]),
-                NotificationIcon::Success, 1.f)->show();
-        }
-    }
-
-    void onBufferSettings(CCObject*) {
-        openSettingsPopup(Mod::get());
-    }
-};
+    void addStepperRow(const char* text, int baseTag, float y, int value, float cx, CCLabelBMFont** outLbl) {
+        auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
